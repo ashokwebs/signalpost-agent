@@ -114,6 +114,21 @@ def _reserve_history_slot(clock: Callable[[], float] = time.monotonic, sleeper: 
         _history_last_request = clock()
 
 
+_accounts_lock = threading.Lock()
+_accounts_last_request = 0.0
+
+
+def _fetch_accounts(url: str, spacing: float = 0.6) -> FetchResult:
+    """Pace Regnskapsregisteret calls: bursts return HTTP 503 (observed on 6/10 companies in a cold smoke run)."""
+    global _accounts_last_request
+    with _accounts_lock:
+        delay = spacing - (time.monotonic() - _accounts_last_request)
+        if delay > 0:
+            time.sleep(delay)
+        _accounts_last_request = time.monotonic()
+    return fetch_json(url)
+
+
 def _fetch_history(url: str) -> FetchResult:
     """Keep this endpoint below its observed 30-request-starts/minute allowance."""
     _reserve_history_slot()
@@ -192,7 +207,8 @@ def fetch_official_modules(org: str, modules: set[str], fetcher: Callable[[str],
     for module, (url, source_type) in endpoints.items():
         if module not in modules:
             continue
-        result = _fetch_history(url) if module == "financial_history" and fetcher is fetch_json else fetcher(url)
+        result = (_fetch_history(url) if module == "financial_history" and fetcher is fetch_json
+                  else _fetch_accounts(url) if module == "financials" and fetcher is fetch_json else fetcher(url))
         metrics.append(result)
         normalized = None
         if result.status == 200:

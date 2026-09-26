@@ -79,6 +79,11 @@ def assess_website_identity(profile: dict[str, Any]) -> dict[str, Any]:
     elif org_digits and org_digits in compact_homepage_candidate:
         score = 1.0
         reasons.append("exact organisation number appears in homepage identity evidence")
+    elif org_digits and any(m.get("digits") == org_digits for page in value.get("pages", []) for m in page.get("org_number_mentions") or []):
+        page = next(p for p in value.get("pages", []) if any(m.get("digits") == org_digits for m in p.get("org_number_mentions") or []))
+        span = next(m["span"] for m in page["org_number_mentions"] if m.get("digits") == org_digits)
+        score = 1.0
+        reasons.append(f"exact organisation number appears on same-domain page {page.get('url')}: \"{span}\"")
     elif len(core) >= 2 and exact_homepage_name:
         score = 0.95
         reasons.append("all normalized legal-name tokens appear together in homepage identity evidence")

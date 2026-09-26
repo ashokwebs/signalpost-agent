@@ -15,6 +15,7 @@ from norway_company_agent.evidence import utc_now  # noqa: E402
 from norway_company_agent.identity import apply_website_identity_gate  # noqa: E402
 from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
+from norway_company_agent.candidates import email_domain_candidate  # noqa: E402
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -38,6 +39,8 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--checkpoint-every", type=int, default=25)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--email-domain-candidates", action=argparse.BooleanOptionalAction, default=True,
+                        help="derive a website candidate from the registry e-mail domain when no homepage is registered")
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website")
     args = parser.parse_args()
 
@@ -62,7 +65,19 @@ def main() -> None:
         website_metrics = {"requests": 0, "bytes": 0, "latencies_ms": []}
         if "website" in requested_modules:
             website_record, website_metrics = fetch_website(profile.get("website"))
-            profile["evidence"]["website"] = apply_website_identity_gate(profile, website_record)["website"]
+            website_record = apply_website_identity_gate(profile, website_record)["website"]
+            if not profile.get("website") and args.email_domain_candidates:
+                candidate = email_domain_candidate(profile)
+                if candidate:
+                    cand_record, cand_metrics = fetch_website(candidate)
+                    cand_record = apply_website_identity_gate(profile, cand_record)["website"]
+                    for key in ("requests", "bytes"):
+                        website_metrics[key] += cand_metrics[key]
+                    website_metrics["latencies_ms"] += cand_metrics["latencies_ms"]
+                    cand_record["discovery_method"] = "registry_email_domain"
+                    cand_record["discovery_evidence"] = {"registry_email_domain": candidate}
+                    website_record = cand_record
+            profile["evidence"]["website"] = website_record
         metric = {
             "requests": len(metrics) + website_metrics["requests"],
             "bytes": sum(item.bytes_received for item in metrics) + website_metrics["bytes"],

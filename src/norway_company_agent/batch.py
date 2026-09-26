@@ -85,9 +85,14 @@ def profiles_from_bulk(path: str | Path, organisation_numbers: Iterable[str]) ->
         if len(found) == len(wanted):
             break
     missing = [org for org in requested if org not in found]
-    if missing:
-        raise ValueError(f"Organisation numbers absent from registry snapshot: {missing[:10]}")
+    live_fallback = []
+    for org in missing:
+        # Never crash or drop an input: entities absent from the bulk snapshot are anchored on the live entity API,
+        # and if that fails too they still get a profile whose registry evidence says so (terminal state, not a gap).
+        found[org] = profile_from_live_registry(org, retrieved_at)
+        live_fallback.append(org)
     return [found[org] for org in requested], {
+        "bulk_missing_live_fallback": live_fallback,
         "registry_snapshot_sha256": snapshot_sha256,
         "registry_rows_scanned": scanned,
         "requested": len(requested),
@@ -162,3 +167,50 @@ def validate_envelopes(envelopes: list[dict[str, Any]], expected_count: int) -> 
 def profile_complete_for_modules(profile: dict[str, Any], modules: Iterable[str]) -> bool:
     records = profile.get("evidence", {})
     return all(module in records and records[module].get("status") != "not_fetched" for module in modules)
+
+
+def _flatten(value: Any, prefix: str = "") -> dict[str, Any]:
+    flat: dict[str, Any] = {}
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "_links":
+                continue
+            flat.update(_flatten(child, f"{prefix}{key}."))
+    elif isinstance(value, list):
+        flat[prefix[:-1]] = ", ".join(str(v) for v in value if not isinstance(v, (dict, list)))
+    else:
+        flat[prefix[:-1]] = "" if value is None else str(value).lower() if isinstance(value, bool) else str(value)
+    return flat
+
+
+def profile_from_live_registry(org: str, retrieved_at: str) -> dict[str, Any]:
+    """Build the same profile shape as the bulk CSV row from the live Enhetsregisteret entity endpoint."""
+    from .http import fetch_json
+    url = f"https://data.brreg.no/enhetsregisteret/api/enheter/{org}"
+    result = fetch_json(url)
+    base: dict[str, Any] = {"organisation_number": org, "name": None, "legal_form": None, "employees": None,
+                            "bankrupt": None, "liquidating": None, "municipality": None, "municipality_number": None,
+                            "industry_code": None, "industry_label": None, "website": "", "latest_submitted_accounts": None}
+    if result.status != 200 or not isinstance(result.body, dict):
+        status = "not_found" if result.status in (404, 410) else "source_error"
+        base["evidence"] = {"registry": evidence("registry", status, "official_registry_live", url, value=None,
+                                                 retrieved_at=result.retrieved_at or retrieved_at,
+                                                 content_sha256=result.content_sha256, note=result.error)}
+        base["evidence"]["accounting_obligation"] = accounting_obligation_assessment(base)
+        return base
+    raw = _flatten(result.body)
+    raw["organisasjonsnummer"] = org
+    employees = raw.get("antallAnsatte")
+    base.update({
+        "name": raw.get("navn"), "legal_form": raw.get("organisasjonsform.kode"),
+        "employees": int(employees) if employees and employees.isdigit() else None,
+        "bankrupt": raw.get("konkurs") == "true", "liquidating": raw.get("underAvvikling") == "true",
+        "municipality": raw.get("forretningsadresse.kommune"), "municipality_number": raw.get("forretningsadresse.kommunenummer"),
+        "industry_code": raw.get("naeringskode1.kode"), "industry_label": raw.get("naeringskode1.beskrivelse"),
+        "website": raw.get("hjemmeside") or "", "latest_submitted_accounts": raw.get("sisteInnsendteAarsregnskap"),
+    })
+    base["evidence"] = {"registry": evidence("registry", "available", "official_registry_live", url, value=raw,
+                                             retrieved_at=result.retrieved_at, content_sha256=result.content_sha256,
+                                             source_row_key=org)}
+    base["evidence"]["accounting_obligation"] = accounting_obligation_assessment(base)
+    return base
