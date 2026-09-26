@@ -1,1 +1,7 @@
+data/live/
 data/nav/
+out/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
