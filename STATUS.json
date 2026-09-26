@@ -1,1 +1,1 @@
-{"project":"","milestone":"M0","state":"not_started","percent":0,"last_update":"","tests":"","needs_claude":false,"needs_human":false,"question":"","next":"M1"}
+{"project":"Signalpost","milestone":"M7","state":"working","percent":55,"last_update":"2026-09-27T05:00:22+05:30","tests":"104 passed, 5 subtests","needs_claude":false,"needs_human":true,"question":"Submission email + public repo are Ashok's; builderr.ai account not required for entry","next":"finish 1,000-profile v1 run; v2 NAV jobs index"}
