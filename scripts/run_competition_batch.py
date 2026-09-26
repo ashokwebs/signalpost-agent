@@ -16,6 +16,7 @@ from norway_company_agent.identity import apply_website_identity_gate  # noqa: E
 from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
 from norway_company_agent.candidates import email_domain_candidate  # noqa: E402
+from norway_company_agent.nav_jobs import NavDetailFetcher, active_by_name, job_evidence, load_index  # noqa: E402
 
 
 def write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -41,6 +42,8 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--email-domain-candidates", action=argparse.BooleanOptionalAction, default=True,
                         help="derive a website candidate from the registry e-mail domain when no homepage is registered")
+    parser.add_argument("--nav-index", default=None,
+                        help="path to the NAV job-feed index (scripts/nav_feed_index.py); enables the hiring module")
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website")
     args = parser.parse_args()
 
@@ -58,6 +61,8 @@ def main() -> None:
     requested_modules = [item.strip() for item in args.modules.split(",") if item.strip()]
     fetch_modules = set(requested_modules) - {"registry", "accounting_obligation", "website"}
     operations = {"requests": 0, "bytes": 0, "latencies_ms": []}
+    nav_by_name = active_by_name(load_index(args.nav_index)) if args.nav_index else None
+    nav_fetch = NavDetailFetcher() if nav_by_name is not None else None
 
     def enrich(profile: dict) -> tuple[dict, dict]:
         records, metrics = fetch_official_modules(profile["organisation_number"], fetch_modules)
@@ -78,8 +83,13 @@ def main() -> None:
                     cand_record["discovery_evidence"] = {"registry_email_domain": candidate}
                     website_record = cand_record
             profile["evidence"]["website"] = website_record
+        nav_requests = 0
+        if nav_by_name is not None:
+            before = nav_fetch.requests
+            profile["evidence"]["jobs"] = job_evidence(profile, nav_by_name, nav_fetch)
+            nav_requests = nav_fetch.requests - before
         metric = {
-            "requests": len(metrics) + website_metrics["requests"],
+            "requests": len(metrics) + website_metrics["requests"] + nav_requests,
             "bytes": sum(item.bytes_received for item in metrics) + website_metrics["bytes"],
             "latencies_ms": [item.elapsed_ms for item in metrics] + website_metrics["latencies_ms"],
         }
@@ -115,7 +125,7 @@ def main() -> None:
     completed_at = utc_now()
     ordered_profiles = [state[org] for org in orgs]
     envelopes = [
-        terminal_envelope(profile, run_id=args.run_id, modules=requested_modules, started_at=started_at, completed_at=completed_at)
+        terminal_envelope(profile, run_id=args.run_id, modules=requested_modules + (["jobs"] if nav_by_name is not None else []), started_at=started_at, completed_at=completed_at)
         for profile in ordered_profiles
     ]
     validation = validate_envelopes(envelopes, args.expected_count)
