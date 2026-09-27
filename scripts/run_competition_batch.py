@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -39,6 +40,9 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--expected-count", type=int, default=100)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--retry-budget-seconds", type=float, default=600, help="time budget for the second-chance pass")
+    parser.add_argument("--retry-rounds", type=int, default=2, help="passes over transient failures")
+    parser.add_argument("--retry-spacing", type=float, default=1.5, help="seconds between second-chance requests")
     parser.add_argument("--checkpoint-every", type=int, default=25)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--email-domain-candidates", action=argparse.BooleanOptionalAction, default=True,
@@ -127,6 +131,32 @@ def main() -> None:
             if index % args.checkpoint_every == 0 or index == len(pending_profiles):
                 checkpoint = [state[org] for org in orgs if org in state]
                 write_jsonl(profiles_output, checkpoint)
+
+    # Second-chance pass: official modules that failed with a transient server error (e.g. Regnskapsregisteret 503 under
+    # load) are retried sequentially and slowly, inside a time budget, so rate limiting doesn't cost coverage.
+    retry_deadline = time.monotonic() + args.retry_budget_seconds
+    retried = recovered = 0
+    for org in [o for _round in range(args.retry_rounds) for o in orgs]:
+        profile = state.get(org)
+        if not profile or time.monotonic() > retry_deadline:
+            continue
+        for module in sorted(fetch_modules):
+            record = profile["evidence"].get(module) or {}
+            if record.get("status") != "source_error" or not str(record.get("note") or "").startswith("HTTP 5"):
+                continue
+            if time.monotonic() > retry_deadline:
+                break
+            time.sleep(args.retry_spacing)
+            records, metrics = fetch_official_modules(org, {module})
+            retried += 1
+            operations["requests"] += len(metrics)
+            new = records.get(module) or {}
+            new["retry_count"] = int(record.get("retry_count") or 0) + 1
+            profile["evidence"][module] = new
+            recovered += new.get("status") == "available"
+    if retried:
+        print(f"second-chance pass: retried {retried}, recovered {recovered}", file=sys.stderr)
+        write_jsonl(profiles_output, [state[org] for org in orgs if org in state])
 
     completed_at = utc_now()
     ordered_profiles = [state[org] for org in orgs]

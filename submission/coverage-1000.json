@@ -1,10 +1,11 @@
 {
  "registry": 1000,
  "registry_live": 1000,
- "financials": 935,
+ "financials": 924,
  "roles": 998,
  "locations": 1000,
  "group": 70,
  "website": 146,
- "website_publishable_exact": 44
+ "website_publishable_exact": 49,
+ "financials_source_error_persistent": 75
 }
