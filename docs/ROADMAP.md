@@ -5,7 +5,7 @@
 - Website candidates from the registry e-mail domain (non-free-mail) → same exact-identity gate → websites 1/10 → 3/10
 - Live Enhetsregisteret fallback for organisations missing from the bulk snapshot → no crash, no dropped envelope
 
-## v2 (next)
+## v2 (27–28 Sep, built; activates when the NAV index finishes building)
 - **Hiring family via NAV's official job-vacancy feed** (pam-stilling-feed.nav.no, public token published by NAV).
   Entries carry businessName; detail entries carry the employer org number → exact match. Plan: offline index of ACTIVE ads
   keyed by org number (declared cache), incremental refresh from the stored cursor at run time; publish only org-number matches.

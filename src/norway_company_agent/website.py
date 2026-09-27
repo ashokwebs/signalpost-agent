@@ -207,6 +207,23 @@ def org_number_mentions(soup: BeautifulSoup, limit: int = 20) -> list[dict[str, 
     return mentions
 
 
+
+def feed_links(base_url: str, soup: BeautifulSoup, limit: int = 3) -> list[str]:
+    """RSS/Atom feeds the site itself advertises (<link rel="alternate" type="application/rss+xml|atom+xml">), same domain only."""
+    base_domain = _registered_domain(base_url)
+    out: list[str] = []
+    for tag in soup.select('link[rel~="alternate"][href]'):
+        kind = str(tag.get("type") or "").lower()
+        if "rss" not in kind and "atom" not in kind:
+            continue
+        url = urllib.parse.urljoin(base_url, str(tag.get("href")))
+        if url.startswith(("http://", "https://")) and _registered_domain(url) == base_domain and url not in out:
+            out.append(url)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _priority_links(base_url: str, soup: BeautifulSoup, limit: int = 4) -> list[str]:
     base = urllib.parse.urlparse(base_url)
     candidates: dict[str, int] = {}
@@ -324,6 +341,7 @@ def fetch_website(url: str | None, *, timeout: float = 15.0, max_bytes: int = 2_
             "extraction_state": _extraction_state(text, soup),
         }
         value["org_number_mentions"] = org_number_mentions(soup)
+        value["feed_links"] = feed_links(final_url, soup)
         pages = [{"url": final_url, "title": title[:500], "main_text_excerpt": text[:5000], "content_sha256": value["content_sha256"],
                   "org_number_mentions": value["org_number_mentions"]}]
         social = value["social_links"]
