@@ -12,6 +12,8 @@
 - Company-site activity: dated news/press pages + RSS/Atom feeds on verified sites (evidence: page URL + date + hash).
 - Company-owned social profiles linked from the verified site (already extracted; ensure they're published with evidence).
 
-## v3
-- Candidate generation for sites without registry e-mail: <legal-name-tokens>.no / .com probes, gated identically.
+## v3 (built)
+- Candidate generation for sites without registry e-mail: <legal-name-tokens>.no / .com probes (max 3 probes, polite), gated identically. Measured: +28 verified websites across first 200 companies (17 -> 45, +165% gain).
+- Dated activity from news/nyheter/aktuelt HTML pages on verified sites (<time datetime> or clear dates).
 - Measurement loop on dev/validation splits (no host overlap), false-change rate on repeated refresh.
+

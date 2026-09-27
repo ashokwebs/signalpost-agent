@@ -35,3 +35,57 @@ def test_activity_only_for_exact_sites_and_counts_requests():
     assert ev["status"] == "available" and n == 1 and ev["value"]["items"][0]["feed_url"] == "https://ex.no/feed"
     ev, n = activity_evidence(_profile(feeds=()))
     assert ev["status"] == "not_found" and n == 0
+
+
+HTML_NEWS = b"""<!DOCTYPE html>
+<html>
+<body>
+  <div class="news-list">
+    <article>
+      <h3><a href="/aktuelt/ny-sjef">Ny daglig leder pa plass</a></h3>
+      <time datetime="2026-09-18T10:00:00Z">18. september 2026</time>
+    </article>
+    <article>
+      <h3><a href="/aktuelt/kontrakt">Vant rammeavtale med Oslo kommune</a></h3>
+      <time datetime="2026-08-25">25. august 2026</time>
+    </article>
+  </div>
+</body>
+</html>"""
+
+
+def test_parse_html_news():
+    from norway_company_agent.activity import parse_html_news
+
+    items = parse_html_news(HTML_NEWS, "https://ex.no/aktuelt")
+    assert len(items) == 2
+    assert items[0]["title"] == "Ny daglig leder pa plass"
+    assert items[0]["link"] == "https://ex.no/aktuelt/ny-sjef"
+    assert items[0]["published"] == "2026-09-18T10:00:00Z"
+    assert items[1]["title"] == "Vant rammeavtale med Oslo kommune"
+    assert items[1]["published"] == "2026-08-25T00:00:00Z"
+
+
+def test_activity_from_html_news_page():
+    profile = {
+        "evidence": {
+            "website": {
+                "status": "available",
+                "source_url": "https://ex.no/",
+                "value": {
+                    "final_url": "https://ex.no/",
+                    "feed_links": [],
+                    "news_links": ["https://ex.no/aktuelt"],
+                    "identity_assessment": {"publishable": True},
+                },
+            }
+        }
+    }
+    ev, n = activity_evidence(profile, fetch=lambda url: (HTML_NEWS, 200))
+    assert ev["status"] == "available"
+    assert n == 1
+    assert ev["source_type"] == "company_site_news"
+    assert len(ev["value"]["items"]) == 2
+    assert ev["effective_at"] == "2026-09-18T10:00:00Z"
+    assert ev["value"]["items"][0]["page_url"] == "https://ex.no/aktuelt"
+

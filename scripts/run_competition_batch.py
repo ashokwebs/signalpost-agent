@@ -16,7 +16,7 @@ from norway_company_agent.evidence import utc_now  # noqa: E402
 from norway_company_agent.identity import apply_website_identity_gate  # noqa: E402
 from norway_company_agent.official import fetch_official_modules  # noqa: E402
 from norway_company_agent.website import fetch_website  # noqa: E402
-from norway_company_agent.candidates import email_domain_candidate  # noqa: E402
+from norway_company_agent.candidates import email_domain_candidate, name_domain_candidates  # noqa: E402
 from norway_company_agent.activity import activity_evidence  # noqa: E402
 from norway_company_agent.nav_jobs import NavDetailFetcher, active_by_name, job_evidence, load_index  # noqa: E402
 
@@ -47,8 +47,10 @@ def main() -> None:
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--email-domain-candidates", action=argparse.BooleanOptionalAction, default=True,
                         help="derive a website candidate from the registry e-mail domain when no homepage is registered")
+    parser.add_argument("--name-token-candidates", action=argparse.BooleanOptionalAction, default=True,
+                        help="probe <legal-name-tokens>.no / .com (max 3 probes) for companies with no registry homepage and no usable e-mail domain")
     parser.add_argument("--activity", action=argparse.BooleanOptionalAction, default=True,
-                        help="read dated activity from the verified website's own RSS/Atom feed")
+                        help="read dated activity from the verified website's own RSS/Atom feed or news pages")
     parser.add_argument("--nav-index", default=None,
                         help="path to the NAV job-feed index (scripts/nav_feed_index.py); enables the hiring module")
     parser.add_argument("--modules", default="registry,accounting_obligation,registry_live,financials,roles,group,locations,website")
@@ -78,6 +80,7 @@ def main() -> None:
         if "website" in requested_modules:
             website_record, website_metrics = fetch_website(profile.get("website"))
             website_record = apply_website_identity_gate(profile, website_record)["website"]
+            email_candidate_usable = False
             if not profile.get("website") and args.email_domain_candidates:
                 candidate = email_domain_candidate(profile)
                 if candidate:
@@ -89,6 +92,22 @@ def main() -> None:
                     cand_record["discovery_method"] = "registry_email_domain"
                     cand_record["discovery_evidence"] = {"registry_email_domain": candidate}
                     website_record = cand_record
+                    if (cand_record.get("value") or {}).get("identity_assessment", {}).get("publishable"):
+                        email_candidate_usable = True
+
+            if not profile.get("website") and not email_candidate_usable and getattr(args, "name_token_candidates", True):
+                for candidate in name_domain_candidates(profile, limit=3):
+                    cand_record, cand_metrics = fetch_website(candidate)
+                    cand_record = apply_website_identity_gate(profile, cand_record)["website"]
+                    for key in ("requests", "bytes"):
+                        website_metrics[key] += cand_metrics[key]
+                    website_metrics["latencies_ms"] += cand_metrics["latencies_ms"]
+                    if (cand_record.get("value") or {}).get("identity_assessment", {}).get("publishable"):
+                        cand_record["discovery_method"] = "legal_name_tokens_probe"
+                        cand_record["discovery_evidence"] = {"probed_url": candidate}
+                        website_record = cand_record
+                        break
+
             profile["evidence"]["website"] = website_record
         activity_requests = 0
         if "website" in requested_modules and args.activity:

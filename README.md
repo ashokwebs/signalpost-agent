@@ -27,6 +27,8 @@ Exactly one terminal envelope per input, always.
 | **Dated activity from the verified site's own RSS/Atom feed** (v2) | "Dated public activity" is a scored family; the reference batch emitted none | Only for exact-identity sites; undated items dropped; `not_applicable` / `not_found` states kept honest |
 | **Hiring from NAV's official job feed** (v2, `--nav-index`) | Hiring is a scored family; NAV ad details carry the employer org number | Published only on exact org-number match; recruiter-on-behalf ads flagged; index built by `scripts/nav_feed_index.py` (declared cache) |
 | **Live Enhetsregisteret fallback** for organisations absent from the bulk snapshot | The reference runner raised and emitted nothing for the whole batch | Batch no longer crashes; affected entities emit complete envelopes |
+| **Website candidate discovery from legal-name tokens** (v3, `<tokens>.no / .com`, max 3 probes) when no registry homepage and no usable e-mail domain | Many operating companies only have a brand domain matching their legal name | Websites: **+28 verified sites** on the first 200 companies of data/live/entry-companies.jsonl (**17 → 45, +165% gain**), publishable only through the exact-identity gate |
+| **Dated activity from news/nyheter/aktuelt HTML pages** (v3) | Many verified sites publish company news with `<time datetime>` or clear dates without advertising an RSS/Atom feed | Expands dated public activity to verified company news pages with page URL, UTC timestamp, and content hash |
 
 ## Source policy (declared)
 
