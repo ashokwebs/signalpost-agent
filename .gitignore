@@ -5,3 +5,10 @@ out/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# internal agent coordination (not part of the entry)
+AGENT_BRIEF.md
+INBOX.md
+PROTOCOL.md
+REPORT.md
+STATUS.json
