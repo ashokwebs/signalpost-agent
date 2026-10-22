@@ -3,8 +3,14 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-import extruct
-import trafilatura
+try:
+    import extruct
+except ImportError:
+    extruct = None
+try:
+    import trafilatura
+except ImportError:
+    trafilatura = None
 from bs4 import BeautifulSoup
 
 from .evidence import evidence, utc_now
@@ -39,7 +45,7 @@ def extract_page_event(
         return {**base, "status": "source_error", "error": f"Unsupported content type: {content_type}"}
     page_html = body.decode("utf-8", errors="replace")
     soup = BeautifulSoup(page_html, "lxml")
-    text = trafilatura.extract(page_html, url=final_url, include_links=False, include_tables=False, favor_precision=True) or ""
+    text = (trafilatura.extract(page_html, url=final_url, include_links=False, include_tables=False, favor_precision=True) or "") if trafilatura else ""
     title = soup.title.get_text(" ", strip=True)[:500] if soup.title else ""
     description_tag = soup.select_one('meta[name="description"], meta[property="og:description"]')
     description = str(description_tag.get("content") or "").strip()[:2000] if description_tag else ""
@@ -60,7 +66,7 @@ def extract_page_event(
         "extraction_state": _extraction_state(text, soup),
     }
     if page_kind == "homepage":
-        structured = extruct.extract(page_html, base_url=final_url, syntaxes=["json-ld", "microdata", "opengraph"])
+        structured = extruct.extract(page_html, base_url=final_url, syntaxes=["json-ld", "microdata", "opengraph"]) if extruct else {}
         event["structured_organisations"] = _jsonld_organisations(structured)
         combined_social = event["social_links"] + structured_social_links(event["structured_organisations"])
         event["social_links"] = list({(item["platform"], item["url"]): item for item in combined_social}.values())
